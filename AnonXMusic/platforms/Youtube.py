@@ -401,10 +401,15 @@ class YouTubeAPI:
                 getAudio = session.get(f"{YTPROXY}/info/{vid_id}", headers=headers, timeout=60)
                 
                 try:
-                    songData = getAudio.json()
-                except Exception as e:
-                    logger.error(f"Invalid response from API: {str(e)}")
-                    return None
+    songData = getAudio.json()
+except Exception as e:
+    logger.error(
+        f"Invalid API response | "
+        f"HTTP={getAudio.status_code} | "
+        f"Content-Type={getAudio.headers.get('content-type')} | "
+        f"Response={getAudio.text[:500]}"
+    )
+    return None
                 finally:
                     session.close()
                 
