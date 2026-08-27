@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")"
+
+# Railway containers are disposable. Do not try to change kernel/network
+# settings (sysctl) here; Railway does not grant those privileges.
+rm -rf __pycache__ AnonXMusic/__pycache__ 2>/dev/null || true
+rm -f logs.txt log.txt 2>/dev/null || true
+
+# Run the already-installed locked environment and forward signals correctly.
+echo "Starting AnonXMusic..."
+exec python -m AnonXMusic
