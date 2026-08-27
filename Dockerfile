@@ -1,5 +1,5 @@
 # Railway-ready Docker image for AnonXMusic
-FROM python:3.13-slim
+FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -7,30 +7,34 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PATH="/app/.venv/bin:${PATH}"
 
-# Install runtime libraries required by FFmpeg / native Python packages.
+# Install FFmpeg and build tools required by native Python packages
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ffmpeg \
         ca-certificates \
         libgomp1 \
+        gcc \
+        g++ \
+        make \
+        libc6-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv from the official image.
+# Install uv
 COPY --from=ghcr.io/astral-sh/uv:0.10.0 /uv /uvx /bin/
 
 WORKDIR /app
 
-# Copy dependency metadata first so Railway/Docker can cache dependency layers.
+# Copy dependency files first for Docker layer caching
 COPY pyproject.toml uv.lock ./
 
-# Install locked dependencies into /app/.venv.
+# Install dependencies
 RUN uv sync --frozen --no-install-project --no-dev
 
-# Copy application source.
+# Copy application source
 COPY . .
 
-# Do not run setup/interactive installer in Railway.
+# Make start script executable
 RUN chmod +x start
 
-# This is a long-running worker; no HTTP port is required.
+# Start application
 CMD ["./start"]
