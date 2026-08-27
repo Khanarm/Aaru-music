@@ -1,5 +1,7 @@
 from typing import Union
 
+from pyrogram.types import InlineKeyboardMarkup
+
 import config
 from AnonXMusic import Apple, Resso, SoundCloud, Spotify, Telegram, YouTube, app
 from AnonXMusic.core.call import Anony
