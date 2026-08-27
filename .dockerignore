@@ -1,0 +1,14 @@
+.git
+.gitignore
+.github
+__pycache__
+*.pyc
+*.pyo
+*.session
+*.session-journal
+*.log
+logs.txt
+log.txt
+.env
+.venv
+pypilog.txt
