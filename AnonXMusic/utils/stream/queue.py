@@ -44,6 +44,12 @@ async def put_queue(
             db[chat_id].append(put)
     else:
         db[chat_id].append(put)
+    if (
+        file
+    and not str(file).startswith("vid_")
+    and not str(file).startswith("live_")
+    and not str(file).startswith("index_")
+):
     autoclean.append(file)
 
 
