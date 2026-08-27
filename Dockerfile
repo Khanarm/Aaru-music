@@ -30,8 +30,7 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 
 # Install exactly the locked environment
-RUN uv sync --frozen --no-install-project --no-dev
-
+RUN uv sync --no-install-project --no-dev
 # Copy application
 COPY . .
 
