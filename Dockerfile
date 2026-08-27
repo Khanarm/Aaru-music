@@ -7,7 +7,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PATH="/app/.venv/bin:${PATH}"
 
-# Install FFmpeg and build tools required by native Python packages
+# Install FFmpeg, Git and build tools required by native Python packages
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ffmpeg \
@@ -17,6 +17,7 @@ RUN apt-get update \
         g++ \
         make \
         libc6-dev \
+        git \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv
