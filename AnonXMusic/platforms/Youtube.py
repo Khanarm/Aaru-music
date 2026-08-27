@@ -17,7 +17,6 @@ logger = LOGGER(__name__)
 
 
 def cookie_txt_file():
-    """Return a randomly selected cookies/*.txt file, if available."""
     try:
         folder_path = os.path.join(os.getcwd(), "cookies")
         txt_files = glob.glob(os.path.join(folder_path, "*.txt"))
@@ -43,7 +42,6 @@ def cookie_txt_file():
 
 
 def cookie_files():
-    """Return all available cookie files."""
     try:
         folder_path = os.path.join(os.getcwd(), "cookies")
 
@@ -57,18 +55,6 @@ def cookie_files():
 
 
 class YouTubeAPI:
-    """
-    YouTube helper using yt-dlp directly.
-
-    The public API is kept compatible with the existing AnonXMusic code.
-
-    403 handling:
-      1. Normal yt-dlp extraction.
-      2. Alternate YouTube player clients.
-      3. Cookie fallback when cookies are available.
-      4. Alternate audio/video format fallback.
-      5. Fresh extraction is performed for every retry.
-    """
 
     def __init__(self):
         self.base = "https://www.youtube.com/watch?v="
@@ -89,9 +75,9 @@ class YouTubeAPI:
             "failed_requests": 0,
         }
 
-    # ---------------------------------------------------------
-    # URL helpers
-    # ---------------------------------------------------------
+    # =========================================================
+    # URL
+    # =========================================================
 
     @staticmethod
     def _clean_link(link: str) -> str:
@@ -100,7 +86,6 @@ class YouTubeAPI:
 
         link = str(link).strip()
 
-        # Remove tracking parameters while preserving the video ID.
         if "&" in link:
             link = link.split("&", 1)[0]
 
@@ -120,9 +105,9 @@ class YouTubeAPI:
 
         return self._clean_link(link)
 
-    # ---------------------------------------------------------
-    # yt-dlp options
-    # ---------------------------------------------------------
+    # =========================================================
+    # YT-DLP OPTIONS
+    # =========================================================
 
     def _ydl_opts(
         self,
@@ -130,12 +115,6 @@ class YouTubeAPI:
         player_client=None,
         **extra,
     ):
-        """
-        Build yt-dlp options.
-
-        We intentionally let yt-dlp handle YouTube's current request
-        headers/signatures instead of manually constructing media URLs.
-        """
 
         opts = {
             "quiet": True,
@@ -143,18 +122,13 @@ class YouTubeAPI:
             "noplaylist": True,
             "restrictfilenames": True,
 
-            # Retry transient HTTP failures.
             "retries": 3,
             "fragment_retries": 3,
             "file_access_retries": 3,
-
-            # Do not abort immediately on temporary network errors.
             "extractor_retries": 2,
 
-            # Avoid unnecessary IPv6 problems on some Railway hosts.
             "source_address": "0.0.0.0",
 
-            # Normal browser-like headers.
             "http_headers": {
                 "User-Agent": (
                     "Mozilla/5.0 (X11; Linux x86_64) "
@@ -180,9 +154,9 @@ class YouTubeAPI:
 
         return opts
 
-    # ---------------------------------------------------------
-    # Search / metadata
-    # ---------------------------------------------------------
+    # =========================================================
+    # EXIST
+    # =========================================================
 
     async def exists(
         self,
@@ -191,6 +165,10 @@ class YouTubeAPI:
     ):
         link = self._video_url(link, videoid)
         return bool(re.search(self.regex, link))
+
+    # =========================================================
+    # URL FROM TELEGRAM MESSAGE
+    # =========================================================
 
     async def url(
         self,
@@ -221,6 +199,10 @@ class YouTubeAPI:
 
         return None
 
+    # =========================================================
+    # DETAILS
+    # =========================================================
+
     async def details(
         self,
         link: str,
@@ -241,6 +223,7 @@ class YouTubeAPI:
         duration_min = result.get("duration")
 
         thumbnails = result.get("thumbnails") or []
+
         thumbnail = (
             thumbnails[0].get("url", "").split("?")[0]
             if thumbnails
@@ -263,6 +246,10 @@ class YouTubeAPI:
             vidid,
         )
 
+    # =========================================================
+    # TITLE
+    # =========================================================
+
     async def title(
         self,
         link: str,
@@ -279,6 +266,10 @@ class YouTubeAPI:
 
         return data[0].get("title", "Unknown")
 
+    # =========================================================
+    # DURATION
+    # =========================================================
+
     async def duration(
         self,
         link: str,
@@ -294,6 +285,10 @@ class YouTubeAPI:
             raise ValueError("No YouTube result found")
 
         return data[0].get("duration")
+
+    # =========================================================
+    # THUMBNAIL
+    # =========================================================
 
     async def thumbnail(
         self,
@@ -316,15 +311,24 @@ class YouTubeAPI:
 
         return thumbnails[0].get("url", "").split("?")[0]
 
-    # ---------------------------------------------------------
-    # Direct media URL
-    # ---------------------------------------------------------
+    # =========================================================
+    # DIRECT STREAM URL
+    # =========================================================
 
     async def video(
         self,
         link: str,
         videoid: Union[bool, str] = None,
+        audio: bool = False,
     ):
+        """
+        Resolve a fresh YouTube media URL.
+
+        IMPORTANT:
+        This DOES NOT download the media.
+        yt-dlp is only used to extract the temporary
+        direct media URL.
+        """
 
         link = self._video_url(link, videoid)
 
@@ -332,62 +336,111 @@ class YouTubeAPI:
             {
                 "name": "default",
                 "client": None,
+                "cookies": None,
             },
             {
                 "name": "web",
                 "client": ["web"],
+                "cookies": None,
             },
             {
                 "name": "android",
                 "client": ["android"],
+                "cookies": None,
             },
             {
                 "name": "ios",
                 "client": ["ios"],
+                "cookies": None,
             },
         ]
+
+        cookies = cookie_files()
+
+        if cookies:
+            random.shuffle(cookies)
+
+            for index, cookie in enumerate(cookies[:3]):
+                attempts.append(
+                    {
+                        "name": f"cookie-{index + 1}",
+                        "client": None,
+                        "cookies": cookie,
+                    }
+                )
+
+                attempts.append(
+                    {
+                        "name": f"cookie-web-{index + 1}",
+                        "client": ["web"],
+                        "cookies": cookie,
+                    }
+                )
+
+        if audio:
+            formats = [
+                "bestaudio[ext=m4a]/bestaudio/best",
+                "bestaudio/best",
+                "best",
+            ]
+        else:
+            formats = [
+                "best[height<=720][width<=1280]",
+                "best[height<=720]",
+                "best",
+            ]
 
         last_error = None
 
         for attempt in attempts:
 
-            try:
-                logger.info(
-                    f"YouTube direct URL attempt: "
-                    f"{attempt['name']}"
-                )
+            for selected_format in formats:
 
-                opts = self._ydl_opts(
-                    player_client=attempt["client"],
-                    format=(
-                        "best[height<=720][width<=1280]"
-                        "/best[height<=720]"
-                        "/best"
-                    ),
-                    skip_download=True,
-                )
+                try:
 
-                direct_url = await asyncio.to_thread(
-                    self._extract_direct,
-                    link,
-                    opts,
-                )
+                    logger.info(
+                        "YouTube DIRECT STREAM attempt: "
+                        f"{attempt['name']} "
+                        f"format={selected_format} "
+                        f"audio={audio}"
+                    )
 
-                if direct_url:
-                    return 1, direct_url
+                    opts = self._ydl_opts(
+                        cookies=attempt["cookies"],
+                        player_client=attempt["client"],
+                        format=selected_format,
+                        skip_download=True,
+                        noplaylist=True,
+                    )
 
-            except Exception as e:
-                last_error = e
+                    direct_url = await asyncio.to_thread(
+                        self._extract_direct,
+                        link,
+                        opts,
+                    )
 
-                logger.warning(
-                    f"YouTube URL attempt "
-                    f"{attempt['name']} failed: {e}"
-                )
+                    if direct_url:
+                        logger.info(
+                            "YouTube direct stream URL "
+                            "resolved successfully."
+                        )
 
-                self.dl_stats["fallback_attempts"] += 1
+                        return 1, direct_url
+
+                except Exception as e:
+
+                    last_error = e
+
+                    logger.warning(
+                        "Direct YouTube stream failed: "
+                        f"{attempt['name']} "
+                        f"{selected_format}: {e}"
+                    )
+
+                    self.dl_stats["fallback_attempts"] += 1
 
         logger.error(
-            f"Unable to resolve YouTube media URL: "
+            "Unable to resolve YouTube direct stream URL: "
             f"{last_error}"
         )
 
@@ -400,6 +453,7 @@ class YouTubeAPI:
     def _extract_direct(link, opts):
 
         with yt_dlp.YoutubeDL(opts) as ydl:
+
             info = ydl.extract_info(
                 link,
                 download=False,
@@ -408,11 +462,27 @@ class YouTubeAPI:
             if not info:
                 return None
 
-            return info.get("url")
+            # Prefer direct URL.
+            direct_url = info.get("url")
 
-    # ---------------------------------------------------------
-    # Playlist
-    # ---------------------------------------------------------
+            if direct_url:
+                return direct_url
+
+            # Fallback for formats list.
+            formats = info.get("formats") or []
+
+            if formats:
+                for fmt in reversed(formats):
+                    url = fmt.get("url")
+
+                    if url:
+                        return url
+
+            return None
+
+    # =========================================================
+    # PLAYLIST
+    # =========================================================
 
     async def playlist(
         self,
@@ -434,6 +504,7 @@ class YouTubeAPI:
         for video in playlist.get("videos", [])[:limit]:
 
             try:
+
                 duration = video.get("duration")
 
                 duration_sec = (
@@ -468,9 +539,9 @@ class YouTubeAPI:
 
         return videos
 
-    # ---------------------------------------------------------
-    # Track
-    # ---------------------------------------------------------
+    # =========================================================
+    # TRACK
+    # =========================================================
 
     async def track(
         self,
@@ -512,9 +583,9 @@ class YouTubeAPI:
             result.get("id"),
         )
 
-    # ---------------------------------------------------------
-    # Formats
-    # ---------------------------------------------------------
+    # =========================================================
+    # FORMATS
+    # =========================================================
 
     async def formats(
         self,
@@ -552,22 +623,14 @@ class YouTubeAPI:
 
                     available.append(
                         {
-                            "format": fmt.get(
-                                "format"
-                            ),
+                            "format": fmt.get("format"),
                             "filesize": (
                                 fmt.get("filesize")
-                                or fmt.get(
-                                    "filesize_approx"
-                                )
+                                or fmt.get("filesize_approx")
                             ),
-                            "format_id": fmt.get(
-                                "format_id"
-                            ),
+                            "format_id": fmt.get("format_id"),
                             "ext": fmt.get("ext"),
-                            "format_note": fmt.get(
-                                "format_note"
-                            ),
+                            "format_note": fmt.get("format_note"),
                             "yturl": link,
                         }
                     )
@@ -579,9 +642,9 @@ class YouTubeAPI:
             link,
         )
 
-    # ---------------------------------------------------------
-    # Slider
-    # ---------------------------------------------------------
+    # =========================================================
+    # SLIDER
+    # =========================================================
 
     async def slider(
         self,
@@ -617,7 +680,6 @@ class YouTubeAPI:
                     parts = duration_str.split(":")
 
                     if len(parts) == 3:
-
                         duration_secs = (
                             int(parts[0]) * 3600
                             + int(parts[1]) * 60
@@ -625,14 +687,12 @@ class YouTubeAPI:
                         )
 
                     elif len(parts) == 2:
-
                         duration_secs = (
                             int(parts[0]) * 60
                             + int(parts[1])
                         )
 
                     else:
-
                         duration_secs = 0
 
                     if duration_secs <= 3600:
@@ -689,9 +749,11 @@ class YouTubeAPI:
                 "Failed to fetch video details"
             )
 
-    # ---------------------------------------------------------
-    # Download
-    # ---------------------------------------------------------
+    # =========================================================
+    # OLD DOWNLOAD METHOD
+    # =========================================================
+    # Kept for compatibility with other parts of the bot.
+    # The new PLAY system will NOT call this for YouTube.
 
     async def download(
         self,
@@ -742,63 +804,39 @@ class YouTubeAPI:
             ),
         )
 
-        # Existing valid file.
         if (
             os.path.exists(output)
             and os.path.getsize(output) > 0
         ):
-            self.dl_stats[
-                "existing_files"
-            ] += 1
-
+            self.dl_stats["existing_files"] += 1
             return output, True
 
-        # -----------------------------------------------------
-        # Build fallback attempts
-        # -----------------------------------------------------
-
-        attempts = []
-
-        # First attempt: normal yt-dlp.
-        attempts.append(
+        attempts = [
             {
                 "name": "default",
                 "client": None,
                 "cookies": None,
-            }
-        )
-
-        # Alternate YouTube clients.
-        attempts.extend(
-            [
-                {
-                    "name": "web",
-                    "client": ["web"],
-                    "cookies": None,
-                },
-                {
-                    "name": "android",
-                    "client": ["android"],
-                    "cookies": None,
-                },
-                {
-                    "name": "ios",
-                    "client": ["ios"],
-                    "cookies": None,
-                },
-            ]
-        )
-
-        # -----------------------------------------------------
-        # Cookie fallback
-        # -----------------------------------------------------
+            },
+            {
+                "name": "web",
+                "client": ["web"],
+                "cookies": None,
+            },
+            {
+                "name": "android",
+                "client": ["android"],
+                "cookies": None,
+            },
+            {
+                "name": "ios",
+                "client": ["ios"],
+                "cookies": None,
+            },
+        ]
 
         cookies = cookie_files()
 
-        # Try a small number of cookie files rather than randomly
-        # selecting a bad cookie on every request.
         if cookies:
-
             random.shuffle(cookies)
 
             for index, cookie in enumerate(cookies[:3]):
@@ -818,10 +856,6 @@ class YouTubeAPI:
                         "cookies": cookie,
                     }
                 )
-
-        # -----------------------------------------------------
-        # Format selection
-        # -----------------------------------------------------
 
         if is_video:
 
@@ -856,45 +890,20 @@ class YouTubeAPI:
 
         last_error = None
 
-        # -----------------------------------------------------
-        # Try downloads
-        # -----------------------------------------------------
+        for attempt_index, attempt in enumerate(attempts):
 
-        for attempt_index, attempt in enumerate(
-            attempts
-        ):
-
-            for format_index, selected_format in enumerate(
-                formats
-            ):
+            for selected_format in formats:
 
                 try:
 
-                    logger.info(
-                        "YouTube download attempt "
-                        f"{attempt_index + 1}/"
-                        f"{len(attempts)} "
-                        f"({attempt['name']}) "
-                        f"format={selected_format}"
-                    )
-
                     ydl_opts = self._ydl_opts(
-                        cookies=attempt[
-                            "cookies"
-                        ],
-                        player_client=attempt[
-                            "client"
-                        ],
+                        cookies=attempt["cookies"],
+                        player_client=attempt["client"],
                         format=selected_format,
                         outtmpl=output,
                         noplaylist=True,
-
-                        # Let yt-dlp retry temporary 403/
-                        # network failures.
                         retries=3,
                         fragment_retries=3,
-
-                        # Merge video/audio when needed.
                         merge_output_format=(
                             "mp4"
                             if is_video
@@ -903,17 +912,11 @@ class YouTubeAPI:
                     )
 
                     if not is_video:
-
-                        ydl_opts[
-                            "postprocessors"
-                        ] = [
+                        ydl_opts["postprocessors"] = [
                             {
-                                "key":
-                                "FFmpegExtractAudio",
-                                "preferredcodec":
-                                "mp3",
-                                "preferredquality":
-                                "192",
+                                "key": "FFmpegExtractAudio",
+                                "preferredcodec": "mp3",
+                                "preferredquality": "192",
                             }
                         ]
 
@@ -923,12 +926,8 @@ class YouTubeAPI:
                         ydl_opts,
                     )
 
-                    # yt-dlp may create a different extension
-                    # before FFmpeg conversion.
                     if (
-                        not os.path.exists(
-                            output
-                        )
+                        not os.path.exists(output)
                         and not is_video
                     ):
 
@@ -942,33 +941,18 @@ class YouTubeAPI:
                         mp3_candidates = [
                             p
                             for p in candidates
-                            if p.lower().endswith(
-                                ".mp3"
-                            )
+                            if p.lower().endswith(".mp3")
                         ]
 
                         if mp3_candidates:
-                            output = (
-                                mp3_candidates[0]
-                            )
+                            output = mp3_candidates[0]
 
-                    # Success.
                     if (
                         os.path.exists(output)
-                        and os.path.getsize(
-                            output
-                        ) > 0
+                        and os.path.getsize(output) > 0
                     ):
 
-                        self.dl_stats[
-                            "direct_downloads"
-                        ] += 1
-
-                        logger.info(
-                            "YouTube download "
-                            "successful: "
-                            f"{attempt['name']}"
-                        )
+                        self.dl_stats["direct_downloads"] += 1
 
                         return output, True
 
@@ -981,57 +965,23 @@ class YouTubeAPI:
 
                     last_error = e
 
-                    error_text = str(e)
+                    self.dl_stats["fallback_attempts"] += 1
 
-                    if (
-                        "403" in error_text
-                        or "Forbidden"
-                        in error_text
-                    ):
-
-                        logger.warning(
-                            "YouTube returned "
-                            "HTTP 403. Trying "
-                            "fallback..."
-                        )
-
-                    else:
-
-                        logger.warning(
-                            "YouTube download "
-                            f"failed: {e}"
-                        )
-
-                    self.dl_stats[
-                        "fallback_attempts"
-                    ] += 1
-
-                    # Remove partial output.
                     self._remove_download_files(
                         safe_id
                     )
 
-                    # Continue with next format/
-                    # client/cookie combination.
                     continue
 
-        self.dl_stats[
-            "failed_requests"
-        ] += 1
-
-        logger.error(
-            "All YouTube download attempts "
-            f"failed: {last_error}"
-        )
+        self.dl_stats["failed_requests"] += 1
 
         raise RuntimeError(
-            f"YouTube download failed: "
-            f"{last_error}"
+            f"YouTube download failed: {last_error}"
         )
 
-    # ---------------------------------------------------------
-    # Download helpers
-    # ---------------------------------------------------------
+    # =========================================================
+    # DOWNLOAD HELPERS
+    # =========================================================
 
     @staticmethod
     def _remove_download_files(
@@ -1047,9 +997,7 @@ class YouTubeAPI:
 
             try:
 
-                if os.path.isfile(
-                    candidate
-                ):
+                if os.path.isfile(candidate):
                     os.remove(candidate)
 
             except OSError:
@@ -1061,8 +1009,5 @@ class YouTubeAPI:
         opts,
     ):
 
-        with yt_dlp.YoutubeDL(
-            opts
-        ) as ydl:
-
+        with yt_dlp.YoutubeDL(opts) as ydl:
             ydl.download([url])
