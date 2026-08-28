@@ -1,7 +1,6 @@
 import asyncio
 import glob
 import os
-import random
 import re
 from typing import Union
 
@@ -13,54 +12,83 @@ from ytSearch import VideosSearch, Playlist
 from AnonXMusic import LOGGER
 from AnonXMusic.utils.formatters import time_to_seconds
 
+
 logger = LOGGER(__name__)
 
 
+# =========================================================
+# COOKIE SUPPORT
+# =========================================================
+
 def cookie_txt_file():
-    try:
-        folder_path = os.path.join(os.getcwd(), "cookies")
-        txt_files = glob.glob(os.path.join(folder_path, "*.txt"))
+    """
+    Return one cookies/*.txt file if available.
 
-        if not txt_files:
-            return None
+    Cookies are optional.
+    No browser extraction or cookie rotation is performed.
+    """
 
-        selected = random.choice(txt_files)
+    folder_path = os.path.join(
+        os.getcwd(),
+        "cookies",
+    )
 
-        try:
-            os.makedirs(folder_path, exist_ok=True)
-            filename = os.path.join(folder_path, "logs.csv")
-
-            with open(filename, "a", encoding="utf-8") as file:
-                file.write(f"Chosen File : {selected}\n")
-        except Exception:
-            pass
-
-        return selected
-
-    except Exception:
+    if not os.path.isdir(folder_path):
         return None
+
+    files = sorted(
+        glob.glob(
+            os.path.join(folder_path, "*.txt")
+        )
+    )
+
+    return files[0] if files else None
 
 
 def cookie_files():
-    try:
-        folder_path = os.path.join(os.getcwd(), "cookies")
+    """
+    Return available cookie files.
 
-        if not os.path.isdir(folder_path):
-            return []
+    Used only when the deployment explicitly provides
+    a cookies/*.txt file.
+    """
 
-        return glob.glob(os.path.join(folder_path, "*.txt"))
+    folder_path = os.path.join(
+        os.getcwd(),
+        "cookies",
+    )
 
-    except Exception:
+    if not os.path.isdir(folder_path):
         return []
 
+    return sorted(
+        glob.glob(
+            os.path.join(folder_path, "*.txt")
+        )
+    )
+
+
+# =========================================================
+# YOUTUBE API
+# =========================================================
 
 class YouTubeAPI:
 
     def __init__(self):
-        self.base = "https://www.youtube.com/watch?v="
+
+        self.base = (
+            "https://www.youtube.com/watch?v="
+        )
+
         self.regex = r"(?:youtube\.com|youtu\.be)"
-        self.status = "https://www.youtube.com/oembed?url="
-        self.listbase = "https://youtube.com/playlist?list="
+
+        self.status = (
+            "https://www.youtube.com/oembed?url="
+        )
+
+        self.listbase = (
+            "https://youtube.com/playlist?list="
+        )
 
         self.reg = re.compile(
             r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])"
@@ -75,22 +103,48 @@ class YouTubeAPI:
             "failed_requests": 0,
         }
 
-    # =========================================================
+    # =====================================================
     # URL
-    # =========================================================
+    # =====================================================
 
     @staticmethod
     def _clean_link(link: str) -> str:
+
         if not link:
             return link
 
         link = str(link).strip()
 
-        if "&" in link:
-            link = link.split("&", 1)[0]
+        # Remove Telegram / tracking fragments.
+        link = link.split("#", 1)[0]
 
-        if "?si=" in link:
-            link = link.split("?si=", 1)[0]
+        # Keep the video ID from normal YouTube watch URLs.
+        if "youtube.com/watch?" in link:
+
+            match = re.search(
+                r"[?&]v=([^&]+)",
+                link,
+            )
+
+            if match:
+                return (
+                    "https://www.youtube.com/watch?v="
+                    + match.group(1)
+                )
+
+        # youtu.be/<id>
+        if "youtu.be/" in link:
+
+            match = re.search(
+                r"youtu\.be/([^?&/]+)",
+                link,
+            )
+
+            if match:
+                return (
+                    "https://www.youtube.com/watch?v="
+                    + match.group(1)
+                )
 
         return link
 
@@ -105,70 +159,92 @@ class YouTubeAPI:
 
         return self._clean_link(link)
 
-    # =========================================================
+    # =====================================================
     # YT-DLP OPTIONS
-    # =========================================================
+    # =====================================================
 
     def _ydl_opts(
         self,
         cookies=None,
-        player_client=None,
         **extra,
     ):
 
         opts = {
+
             "quiet": True,
+
             "no_warnings": True,
+
             "noplaylist": True,
+
             "restrictfilenames": True,
 
+            "nocheckcertificate": True,
+
             "retries": 3,
+
             "fragment_retries": 3,
+
             "file_access_retries": 3,
+
             "extractor_retries": 2,
+
+            "continuedl": True,
+
+            "concurrent_fragment_downloads": 1,
 
             "source_address": "0.0.0.0",
 
+            "socket_timeout": 20,
+
             "http_headers": {
                 "User-Agent": (
-                    "Mozilla/5.0 (X11; Linux x86_64) "
+                    "Mozilla/5.0 "
+                    "(X11; Linux x86_64) "
                     "AppleWebKit/537.36 "
                     "(KHTML, like Gecko) "
-                    "Chrome/131.0.0.0 Safari/537.36"
+                    "Chrome/131.0.0.0 "
+                    "Safari/537.36"
                 ),
-                "Accept-Language": "en-US,en;q=0.9",
+                "Accept-Language": (
+                    "en-US,en;q=0.9"
+                ),
             },
         }
 
         if cookies:
-            opts["cookiefile"] = cookies
-
-        if player_client:
-            opts["extractor_args"] = {
-                "youtube": {
-                    "player_client": player_client,
-                }
-            }
+            if os.path.isfile(cookies):
+                opts["cookiefile"] = cookies
 
         opts.update(extra)
 
         return opts
 
-    # =========================================================
-    # EXIST
-    # =========================================================
+    # =====================================================
+    # SEARCH / EXIST
+    # =====================================================
 
     async def exists(
         self,
         link: str,
         videoid: Union[bool, str] = None,
     ):
-        link = self._video_url(link, videoid)
-        return bool(re.search(self.regex, link))
 
-    # =========================================================
+        link = self._video_url(
+            link,
+            videoid,
+        )
+
+        return bool(
+            re.search(
+                self.regex,
+                link,
+            )
+        )
+
+    # =====================================================
     # URL FROM TELEGRAM MESSAGE
-    # =========================================================
+    # =====================================================
 
     async def url(
         self,
@@ -178,30 +254,71 @@ class YouTubeAPI:
         messages = [message_1]
 
         if message_1.reply_to_message:
-            messages.append(message_1.reply_to_message)
+            messages.append(
+                message_1.reply_to_message
+            )
 
         for message in messages:
 
             if message.entities:
-                text = message.text or message.caption or ""
+
+                text = (
+                    message.text
+                    or message.caption
+                    or ""
+                )
 
                 for entity in message.entities:
-                    if entity.type == MessageEntityType.URL:
+
+                    if (
+                        entity.type
+                        == MessageEntityType.URL
+                    ):
+
                         return text[
                             entity.offset:
-                            entity.offset + entity.length
+                            entity.offset
+                            + entity.length
                         ]
 
             if message.caption_entities:
+
                 for entity in message.caption_entities:
-                    if entity.type == MessageEntityType.TEXT_LINK:
+
+                    if (
+                        entity.type
+                        == MessageEntityType.TEXT_LINK
+                    ):
+
                         return entity.url
 
         return None
 
-    # =========================================================
+    # =====================================================
+    # SEARCH HELPER
+    # =====================================================
+
+    async def _search(
+        self,
+        query: str,
+        limit: int = 1,
+    ):
+
+        results = VideosSearch(
+            query,
+            limit=limit,
+        )
+
+        data = await results.next()
+
+        return data.get(
+            "result",
+            [],
+        )
+
+    # =====================================================
     # DETAILS
-    # =========================================================
+    # =====================================================
 
     async def details(
         self,
@@ -209,34 +326,61 @@ class YouTubeAPI:
         videoid: Union[bool, str] = None,
     ):
 
-        link = self._video_url(link, videoid)
+        link = self._video_url(
+            link,
+            videoid,
+        )
 
-        results = VideosSearch(link, limit=1)
-        data = (await results.next()).get("result", [])
+        data = await self._search(
+            link,
+            1,
+        )
 
         if not data:
-            raise ValueError("No YouTube result found")
+            raise ValueError(
+                "No YouTube result found"
+            )
 
         result = data[0]
 
-        title = result.get("title", "Unknown")
-        duration_min = result.get("duration")
+        title = result.get(
+            "title",
+            "Unknown",
+        )
 
-        thumbnails = result.get("thumbnails") or []
+        duration_min = result.get(
+            "duration"
+        )
+
+        thumbnails = (
+            result.get("thumbnails")
+            or []
+        )
 
         thumbnail = (
-            thumbnails[0].get("url", "").split("?")[0]
+            thumbnails[0].get(
+                "url",
+                "",
+            ).split("?")[0]
             if thumbnails
             else ""
         )
 
         vidid = result.get("id")
 
-        duration_sec = (
-            0
-            if not duration_min
-            else int(time_to_seconds(duration_min))
-        )
+        duration_sec = 0
+
+        if duration_min:
+
+            try:
+                duration_sec = int(
+                    time_to_seconds(
+                        duration_min
+                    )
+                )
+
+            except Exception:
+                duration_sec = 0
 
         return (
             title,
@@ -246,9 +390,9 @@ class YouTubeAPI:
             vidid,
         )
 
-    # =========================================================
+    # =====================================================
     # TITLE
-    # =========================================================
+    # =====================================================
 
     async def title(
         self,
@@ -256,19 +400,29 @@ class YouTubeAPI:
         videoid: Union[bool, str] = None,
     ):
 
-        link = self._video_url(link, videoid)
+        link = self._video_url(
+            link,
+            videoid,
+        )
 
-        results = VideosSearch(link, limit=1)
-        data = (await results.next()).get("result", [])
+        data = await self._search(
+            link,
+            1,
+        )
 
         if not data:
-            raise ValueError("No YouTube result found")
+            raise ValueError(
+                "No YouTube result found"
+            )
 
-        return data[0].get("title", "Unknown")
+        return data[0].get(
+            "title",
+            "Unknown",
+        )
 
-    # =========================================================
+    # =====================================================
     # DURATION
-    # =========================================================
+    # =====================================================
 
     async def duration(
         self,
@@ -276,19 +430,28 @@ class YouTubeAPI:
         videoid: Union[bool, str] = None,
     ):
 
-        link = self._video_url(link, videoid)
+        link = self._video_url(
+            link,
+            videoid,
+        )
 
-        results = VideosSearch(link, limit=1)
-        data = (await results.next()).get("result", [])
+        data = await self._search(
+            link,
+            1,
+        )
 
         if not data:
-            raise ValueError("No YouTube result found")
+            raise ValueError(
+                "No YouTube result found"
+            )
 
-        return data[0].get("duration")
+        return data[0].get(
+            "duration"
+        )
 
-    # =========================================================
+    # =====================================================
     # THUMBNAIL
-    # =========================================================
+    # =====================================================
 
     async def thumbnail(
         self,
@@ -296,24 +459,37 @@ class YouTubeAPI:
         videoid: Union[bool, str] = None,
     ):
 
-        link = self._video_url(link, videoid)
+        link = self._video_url(
+            link,
+            videoid,
+        )
 
-        results = VideosSearch(link, limit=1)
-        data = (await results.next()).get("result", [])
+        data = await self._search(
+            link,
+            1,
+        )
 
         if not data:
-            raise ValueError("No YouTube result found")
+            raise ValueError(
+                "No YouTube result found"
+            )
 
-        thumbnails = data[0].get("thumbnails") or []
+        thumbnails = (
+            data[0].get("thumbnails")
+            or []
+        )
 
         if not thumbnails:
             return ""
 
-        return thumbnails[0].get("url", "").split("?")[0]
+        return thumbnails[0].get(
+            "url",
+            "",
+        ).split("?")[0]
 
-    # =========================================================
+    # =====================================================
     # DIRECT STREAM URL
-    # =========================================================
+    # =====================================================
 
     async def video(
         self,
@@ -322,73 +498,63 @@ class YouTubeAPI:
         audio: bool = False,
     ):
         """
-        Resolve a fresh YouTube media URL.
+        Resolve a fresh direct media URL.
 
-        IMPORTANT:
-        This DOES NOT download the media.
-        yt-dlp is only used to extract the temporary
-        direct media URL.
+        No media is downloaded here.
+
+        Cookies are optional. If YouTube requires
+        authentication for the current request, the
+        caller should use the download fallback or
+        provide an authorized cookie file.
         """
 
-        link = self._video_url(link, videoid)
+        link = self._video_url(
+            link,
+            videoid,
+        )
 
-        attempts = [
-            {
-                "name": "default",
-                "client": None,
-                "cookies": None,
-            },
-            {
-                "name": "web",
-                "client": ["web"],
-                "cookies": None,
-            },
-            {
-                "name": "android",
-                "client": ["android"],
-                "cookies": None,
-            },
-            {
-                "name": "ios",
-                "client": ["ios"],
-                "cookies": None,
-            },
-        ]
-
-        cookies = cookie_files()
-
-        if cookies:
-            random.shuffle(cookies)
-
-            for index, cookie in enumerate(cookies[:3]):
-                attempts.append(
-                    {
-                        "name": f"cookie-{index + 1}",
-                        "client": None,
-                        "cookies": cookie,
-                    }
-                )
-
-                attempts.append(
-                    {
-                        "name": f"cookie-web-{index + 1}",
-                        "client": ["web"],
-                        "cookies": cookie,
-                    }
-                )
+        self.dl_stats[
+            "total_requests"
+        ] += 1
 
         if audio:
+
             formats = [
                 "bestaudio[ext=m4a]/bestaudio/best",
                 "bestaudio/best",
                 "best",
             ]
+
         else:
+
             formats = [
-                "best[height<=720][width<=1280]",
-                "best[height<=720]",
+                (
+                    "best[height<=720][width<=1280]"
+                    "/best[height<=720]/best"
+                ),
+                "best[height<=720]/best",
                 "best",
             ]
+
+        # First try without cookies.
+        attempts = [
+            {
+                "name": "direct",
+                "cookies": None,
+            }
+        ]
+
+        # Optional explicit cookie file.
+        cookie = cookie_txt_file()
+
+        if cookie:
+
+            attempts.append(
+                {
+                    "name": "configured-cookie",
+                    "cookies": cookie,
+                }
+            )
 
         last_error = None
 
@@ -399,15 +565,15 @@ class YouTubeAPI:
                 try:
 
                     logger.info(
-                        "YouTube DIRECT STREAM attempt: "
+                        "YouTube direct stream: "
                         f"{attempt['name']} "
-                        f"format={selected_format} "
-                        f"audio={audio}"
+                        f"format={selected_format}"
                     )
 
                     opts = self._ydl_opts(
-                        cookies=attempt["cookies"],
-                        player_client=attempt["client"],
+                        cookies=attempt[
+                            "cookies"
+                        ],
                         format=selected_format,
                         skip_download=True,
                         noplaylist=True,
@@ -420,37 +586,63 @@ class YouTubeAPI:
                     )
 
                     if direct_url:
+
+                        if attempt["cookies"]:
+                            self.dl_stats[
+                                "cookie_downloads"
+                            ] += 1
+                        else:
+                            self.dl_stats[
+                                "direct_downloads"
+                            ] += 1
+
                         logger.info(
-                            "YouTube direct stream URL "
-                            "resolved successfully."
+                            "YouTube direct stream "
+                            "URL resolved."
                         )
 
-                        return 1, direct_url
+                        return (
+                            1,
+                            direct_url,
+                        )
 
                 except Exception as e:
 
                     last_error = e
 
+                    self.dl_stats[
+                        "fallback_attempts"
+                    ] += 1
+
                     logger.warning(
-                        "Direct YouTube stream failed: "
-                        f"{attempt['name']} "
-                        f"{selected_format}: {e}"
+                        "YouTube direct stream "
+                        f"failed: {e}"
                     )
 
-                    self.dl_stats["fallback_attempts"] += 1
-
         logger.error(
-            "Unable to resolve YouTube direct stream URL: "
-            f"{last_error}"
+            "Unable to resolve YouTube "
+            f"direct stream URL: {last_error}"
         )
 
-        return 0, str(
-            last_error or
-            "Unable to resolve YouTube media URL"
+        return (
+            0,
+            str(
+                last_error
+                or
+                "Unable to resolve "
+                "YouTube media URL"
+            ),
         )
+
+    # =====================================================
+    # DIRECT EXTRACTION
+    # =====================================================
 
     @staticmethod
-    def _extract_direct(link, opts):
+    def _extract_direct(
+        link,
+        opts,
+    ):
 
         with yt_dlp.YoutubeDL(opts) as ydl:
 
@@ -462,27 +654,75 @@ class YouTubeAPI:
             if not info:
                 return None
 
-            # Prefer direct URL.
-            direct_url = info.get("url")
+            # Single-format extraction.
+            direct_url = info.get(
+                "url"
+            )
 
             if direct_url:
                 return direct_url
 
-            # Fallback for formats list.
-            formats = info.get("formats") or []
+            # Format list fallback.
+            formats = (
+                info.get("formats")
+                or []
+            )
 
-            if formats:
-                for fmt in reversed(formats):
-                    url = fmt.get("url")
+            # Prefer audio-only formats.
+            audio_formats = [
+                fmt
+                for fmt in formats
+                if fmt.get("acodec")
+                not in (
+                    None,
+                    "none",
+                )
+                and fmt.get("vcodec")
+                in (
+                    None,
+                    "none",
+                )
+                and fmt.get("url")
+            ]
 
-                    if url:
-                        return url
+            if audio_formats:
+
+                # Prefer m4a/mp4.
+                audio_formats.sort(
+                    key=lambda x: (
+                        x.get("ext")
+                        not in (
+                            "m4a",
+                            "mp4",
+                        ),
+                        -(
+                            x.get(
+                                "abr"
+                            )
+                            or 0
+                        ),
+                    )
+                )
+
+                return audio_formats[0][
+                    "url"
+                ]
+
+            # Generic fallback.
+            for fmt in reversed(formats):
+
+                url = fmt.get(
+                    "url"
+                )
+
+                if url:
+                    return url
 
             return None
 
-    # =========================================================
+    # =====================================================
     # PLAYLIST
-    # =========================================================
+    # =====================================================
 
     async def playlist(
         self,
@@ -492,44 +732,74 @@ class YouTubeAPI:
         videoid: Union[bool, str] = None,
     ):
 
-        link = self._video_url(link, videoid)
+        link = self._video_url(
+            link,
+            videoid,
+        )
 
-        playlist = await Playlist.get(link)
+        playlist = await Playlist.get(
+            link
+        )
 
         if not playlist:
             return None
 
         videos = []
 
-        for video in playlist.get("videos", [])[:limit]:
+        for video in playlist.get(
+            "videos",
+            [],
+        )[:limit]:
 
             try:
 
-                duration = video.get("duration")
-
-                duration_sec = (
-                    int(time_to_seconds(duration))
-                    if duration
-                    else 0
+                duration = video.get(
+                    "duration"
                 )
 
-                thumbnails = video.get("thumbnails") or []
+                duration_sec = 0
+
+                if duration:
+
+                    try:
+                        duration_sec = int(
+                            time_to_seconds(
+                                duration
+                            )
+                        )
+
+                    except Exception:
+                        duration_sec = 0
+
+                thumbnails = (
+                    video.get(
+                        "thumbnails"
+                    )
+                    or []
+                )
 
                 thumbnail = (
-                    thumbnails[0].get("url", "").split("?")[0]
+                    thumbnails[0].get(
+                        "url",
+                        "",
+                    ).split("?")[0]
                     if thumbnails
                     else ""
                 )
 
                 videos.append(
                     {
-                        "vidid": video.get("id"),
+                        "vidid": video.get(
+                            "id"
+                        ),
                         "title": video.get(
                             "title",
                             "Unknown",
                         ),
                         "duration_min": duration,
-                        "duration_sec": duration_sec,
+                        "duration_sec": (
+                            duration_sec
+                        ),
                         "thumbnail": thumbnail,
                     }
                 )
@@ -539,9 +809,9 @@ class YouTubeAPI:
 
         return videos
 
-    # =========================================================
+    # =====================================================
     # TRACK
-    # =========================================================
+    # =====================================================
 
     async def track(
         self,
@@ -549,20 +819,33 @@ class YouTubeAPI:
         videoid: Union[bool, str] = None,
     ):
 
-        link = self._video_url(link, videoid)
+        link = self._video_url(
+            link,
+            videoid,
+        )
 
-        results = VideosSearch(link, limit=1)
-        data = (await results.next()).get("result", [])
+        data = await self._search(
+            link,
+            1,
+        )
 
         if not data:
-            raise ValueError("No YouTube result found")
+            raise ValueError(
+                "No YouTube result found"
+            )
 
         result = data[0]
 
-        thumbnails = result.get("thumbnails") or []
+        thumbnails = (
+            result.get("thumbnails")
+            or []
+        )
 
         thumb = (
-            thumbnails[0].get("url", "").split("?")[0]
+            thumbnails[0].get(
+                "url",
+                "",
+            ).split("?")[0]
             if thumbnails
             else ""
         )
@@ -572,9 +855,15 @@ class YouTubeAPI:
                 "title",
                 "Unknown",
             ),
-            "link": result.get("link"),
-            "vidid": result.get("id"),
-            "duration_min": result.get("duration"),
+            "link": result.get(
+                "link"
+            ),
+            "vidid": result.get(
+                "id"
+            ),
+            "duration_min": result.get(
+                "duration"
+            ),
             "thumb": thumb,
         }
 
@@ -583,9 +872,9 @@ class YouTubeAPI:
             result.get("id"),
         )
 
-    # =========================================================
+    # =====================================================
     # FORMATS
-    # =========================================================
+    # =====================================================
 
     async def formats(
         self,
@@ -593,12 +882,17 @@ class YouTubeAPI:
         videoid: Union[bool, str] = None,
     ):
 
-        link = self._video_url(link, videoid)
+        link = self._video_url(
+            link,
+            videoid,
+        )
 
         def extract():
 
+            opts = self._ydl_opts()
+
             with yt_dlp.YoutubeDL(
-                self._ydl_opts()
+                opts
             ) as ydl:
 
                 info = ydl.extract_info(
@@ -614,37 +908,54 @@ class YouTubeAPI:
                 ):
 
                     if (
-                        "dash"
-                        in str(
-                            fmt.get("format", "")
-                        ).lower()
+                        fmt.get("vcodec")
+                        == "none"
+                        and fmt.get("acodec")
+                        not in (
+                            None,
+                            "none",
+                        )
                     ):
-                        continue
 
-                    available.append(
-                        {
-                            "format": fmt.get("format"),
-                            "filesize": (
-                                fmt.get("filesize")
-                                or fmt.get("filesize_approx")
-                            ),
-                            "format_id": fmt.get("format_id"),
-                            "ext": fmt.get("ext"),
-                            "format_note": fmt.get("format_note"),
-                            "yturl": link,
-                        }
-                    )
+                        available.append(
+                            {
+                                "format": fmt.get(
+                                    "format"
+                                ),
+                                "filesize": (
+                                    fmt.get(
+                                        "filesize"
+                                    )
+                                    or
+                                    fmt.get(
+                                        "filesize_approx"
+                                    )
+                                ),
+                                "format_id": fmt.get(
+                                    "format_id"
+                                ),
+                                "ext": fmt.get(
+                                    "ext"
+                                ),
+                                "format_note": fmt.get(
+                                    "format_note"
+                                ),
+                                "yturl": link,
+                            }
+                        )
 
                 return available
 
         return (
-            await asyncio.to_thread(extract),
+            await asyncio.to_thread(
+                extract
+            ),
             link,
         )
 
-    # =========================================================
+    # =====================================================
     # SLIDER
-    # =========================================================
+    # =====================================================
 
     async def slider(
         self,
@@ -653,7 +964,10 @@ class YouTubeAPI:
         videoid: Union[bool, str] = None,
     ):
 
-        link = self._video_url(link, videoid)
+        link = self._video_url(
+            link,
+            videoid,
+        )
 
         try:
 
@@ -664,22 +978,30 @@ class YouTubeAPI:
 
             search_results = (
                 await search.next()
-            ).get("result", [])
+            ).get(
+                "result",
+                [],
+            )
 
             results = []
 
             for result in search_results:
 
                 duration_str = (
-                    result.get("duration")
+                    result.get(
+                        "duration"
+                    )
                     or "0:00"
                 )
 
                 try:
 
-                    parts = duration_str.split(":")
+                    parts = duration_str.split(
+                        ":"
+                    )
 
                     if len(parts) == 3:
+
                         duration_secs = (
                             int(parts[0]) * 3600
                             + int(parts[1]) * 60
@@ -687,36 +1009,46 @@ class YouTubeAPI:
                         )
 
                     elif len(parts) == 2:
+
                         duration_secs = (
                             int(parts[0]) * 60
                             + int(parts[1])
                         )
 
                     else:
+
                         duration_secs = 0
 
                     if duration_secs <= 3600:
-                        results.append(result)
+                        results.append(
+                            result
+                        )
 
                 except (
                     ValueError,
                     IndexError,
                 ):
+
                     continue
 
             if (
                 not results
                 or query_type >= len(results)
             ):
+
                 raise ValueError(
                     "No suitable videos found "
                     "within duration limit"
                 )
 
-            selected = results[query_type]
+            selected = results[
+                query_type
+            ]
 
             thumbnails = (
-                selected.get("thumbnails")
+                selected.get(
+                    "thumbnails"
+                )
                 or []
             )
 
@@ -734,9 +1066,13 @@ class YouTubeAPI:
                     "title",
                     "Unknown",
                 ),
-                selected.get("duration"),
+                selected.get(
+                    "duration"
+                ),
                 thumbnail,
-                selected.get("id"),
+                selected.get(
+                    "id"
+                ),
             )
 
         except Exception as e:
@@ -749,11 +1085,9 @@ class YouTubeAPI:
                 "Failed to fetch video details"
             )
 
-    # =========================================================
-    # OLD DOWNLOAD METHOD
-    # =========================================================
-    # Kept for compatibility with other parts of the bot.
-    # The new PLAY system will NOT call this for YouTube.
+    # =====================================================
+    # DOWNLOAD
+    # =====================================================
 
     async def download(
         self,
@@ -767,18 +1101,36 @@ class YouTubeAPI:
         title: Union[bool, str] = None,
     ):
 
-        self.dl_stats["total_requests"] += 1
+        self.dl_stats[
+            "total_requests"
+        ] += 1
 
-        vid_id = (
-            str(link)
-            if videoid
-            else None
-        )
+        # -------------------------------------------------
+        # Resolve video ID
+        # -------------------------------------------------
+
+        if videoid:
+            vid_id = str(link)
+
+        else:
+            vid_id = None
+
+            match = re.search(
+                r"(?:v=|youtu\.be/)([^&?/]+)",
+                str(link),
+            )
+
+            if match:
+                vid_id = match.group(1)
 
         url = self._video_url(
             link,
             videoid,
         )
+
+        # -------------------------------------------------
+        # Downloads directory
+        # -------------------------------------------------
 
         os.makedirs(
             "downloads",
@@ -795,130 +1147,187 @@ class YouTubeAPI:
             video or songvideo
         )
 
-        output = os.path.join(
-            "downloads",
-            (
-                f"{safe_id}.mp4"
-                if is_video
-                else f"{safe_id}.mp3"
-            ),
-        )
+        # -------------------------------------------------
+        # Final expected path
+        # -------------------------------------------------
+
+        if is_video:
+
+            output = os.path.join(
+                "downloads",
+                f"{safe_id}.mp4",
+            )
+
+        else:
+
+            output = os.path.join(
+                "downloads",
+                f"{safe_id}.mp3",
+            )
+
+        # -------------------------------------------------
+        # Existing file
+        # -------------------------------------------------
 
         if (
             os.path.exists(output)
             and os.path.getsize(output) > 0
         ):
-            self.dl_stats["existing_files"] += 1
-            return output, True
 
-        attempts = [
-            {
-                "name": "default",
-                "client": None,
-                "cookies": None,
-            },
-            {
-                "name": "web",
-                "client": ["web"],
-                "cookies": None,
-            },
-            {
-                "name": "android",
-                "client": ["android"],
-                "cookies": None,
-            },
-            {
-                "name": "ios",
-                "client": ["ios"],
-                "cookies": None,
-            },
-        ]
+            self.dl_stats[
+                "existing_files"
+            ] += 1
 
-        cookies = cookie_files()
+            return (
+                output,
+                True,
+            )
 
-        if cookies:
-            random.shuffle(cookies)
-
-            for index, cookie in enumerate(cookies[:3]):
-
-                attempts.append(
-                    {
-                        "name": f"cookie-{index + 1}",
-                        "client": None,
-                        "cookies": cookie,
-                    }
-                )
-
-                attempts.append(
-                    {
-                        "name": f"cookie-web-{index + 1}",
-                        "client": ["web"],
-                        "cookies": cookie,
-                    }
-                )
+        # -------------------------------------------------
+        # Formats
+        # -------------------------------------------------
 
         if is_video:
 
-            formats = [
-                (
-                    format_id
-                    if format_id
-                    else
-                    "bestvideo[height<=720]"
-                    "+bestaudio/"
-                    "best[height<=720]/"
-                    "best"
-                ),
-                "best[height<=720]/best",
-                "best",
-            ]
+            if format_id:
+
+                formats = [
+                    format_id,
+                    (
+                        "bestvideo[height<=720]"
+                        "+bestaudio/"
+                        "best[height<=720]/best"
+                    ),
+                    "best[height<=720]/best",
+                    "best",
+                ]
+
+            else:
+
+                formats = [
+                    (
+                        "bestvideo[height<=720]"
+                        "+bestaudio/"
+                        "best[height<=720]/best"
+                    ),
+                    "best[height<=720]/best",
+                    "best",
+                ]
 
         else:
 
-            formats = [
-                (
-                    format_id
-                    if format_id
-                    else
-                    "bestaudio[ext=m4a]/"
-                    "bestaudio/"
-                    "best"
-                ),
-                "bestaudio/best",
-                "best",
-            ]
+            if format_id:
+
+                formats = [
+                    format_id,
+                    "bestaudio[ext=m4a]/bestaudio/best",
+                    "bestaudio/best",
+                    "best",
+                ]
+
+            else:
+
+                formats = [
+                    "bestaudio[ext=m4a]/bestaudio/best",
+                    "bestaudio/best",
+                    "best",
+                ]
+
+        # -------------------------------------------------
+        # Attempt list
+        # -------------------------------------------------
+
+        attempts = [
+            {
+                "name": "direct",
+                "cookies": None,
+            }
+        ]
+
+        cookie = cookie_txt_file()
+
+        if cookie:
+
+            attempts.append(
+                {
+                    "name": "configured-cookie",
+                    "cookies": cookie,
+                }
+            )
 
         last_error = None
 
-        for attempt_index, attempt in enumerate(attempts):
+        # -------------------------------------------------
+        # Download
+        # -------------------------------------------------
+
+        for attempt in attempts:
 
             for selected_format in formats:
 
                 try:
 
-                    ydl_opts = self._ydl_opts(
-                        cookies=attempt["cookies"],
-                        player_client=attempt["client"],
-                        format=selected_format,
-                        outtmpl=output,
-                        noplaylist=True,
-                        retries=3,
-                        fragment_retries=3,
-                        merge_output_format=(
-                            "mp4"
-                            if is_video
-                            else None
-                        ),
+                    logger.info(
+                        "YouTube download attempt: "
+                        f"{attempt['name']} "
+                        f"format={selected_format}"
                     )
 
+                    self._remove_download_files(
+                        safe_id
+                    )
+
+                    # Use a temporary output name.
+                    temp_output = os.path.join(
+                        "downloads",
+                        f"{safe_id}.%(ext)s",
+                    )
+
+                    ydl_opts = self._ydl_opts(
+                        cookies=attempt[
+                            "cookies"
+                        ],
+                        format=selected_format,
+                        outtmpl=temp_output,
+                        noplaylist=True,
+                        skip_download=False,
+                    )
+
+                    # -------------------------------------
+                    # AUDIO
+                    # -------------------------------------
+
                     if not is_video:
-                        ydl_opts["postprocessors"] = [
+
+                        ydl_opts[
+                            "postprocessors"
+                        ] = [
                             {
-                                "key": "FFmpegExtractAudio",
+                                "key": (
+                                    "FFmpegExtractAudio"
+                                ),
                                 "preferredcodec": "mp3",
                                 "preferredquality": "192",
                             }
                         ]
+
+                        ydl_opts[
+                            "postprocessor_args"
+                        ] = {
+                            "ffmpeg": [
+                                "-vn",
+                            ]
+                        }
+
+                    # -------------------------------------
+                    # VIDEO
+                    # -------------------------------------
+
+                    else:
+
+                        ydl_opts[
+                            "merge_output_format"
+                        ] = "mp4"
 
                     await asyncio.to_thread(
                         self._download_sync,
@@ -926,46 +1335,165 @@ class YouTubeAPI:
                         ydl_opts,
                     )
 
-                    if (
-                        not os.path.exists(output)
-                        and not is_video
+                    # -------------------------------------
+                    # Find resulting media
+                    # -------------------------------------
+
+                    candidates = []
+
+                    for path in glob.glob(
+                        os.path.join(
+                            "downloads",
+                            f"{safe_id}.*",
+                        )
                     ):
 
-                        candidates = glob.glob(
-                            os.path.join(
-                                "downloads",
-                                f"{safe_id}.*",
-                            )
+                        if (
+                            os.path.isfile(path)
+                            and os.path.getsize(path)
+                            > 0
+                        ):
+
+                            if not path.endswith(
+                                ".part"
+                            ):
+
+                                candidates.append(
+                                    path
+                                )
+
+                    if not candidates:
+
+                        raise RuntimeError(
+                            "yt-dlp completed but "
+                            "no media file was created"
                         )
 
-                        mp3_candidates = [
+                    # -------------------------------------
+                    # Prefer final extension
+                    # -------------------------------------
+
+                    if is_video:
+
+                        preferred = [
                             p
                             for p in candidates
-                            if p.lower().endswith(".mp3")
+                            if p.lower().endswith(
+                                ".mp4"
+                            )
                         ]
 
-                        if mp3_candidates:
-                            output = mp3_candidates[0]
+                    else:
+
+                        preferred = [
+                            p
+                            for p in candidates
+                            if p.lower().endswith(
+                                ".mp3"
+                            )
+                        ]
+
+                    if preferred:
+
+                        final_file = max(
+                            preferred,
+                            key=os.path.getsize,
+                        )
+
+                    else:
+
+                        final_file = max(
+                            candidates,
+                            key=os.path.getsize,
+                        )
+
+                    # -------------------------------------
+                    # Rename to expected path
+                    # -------------------------------------
 
                     if (
-                        os.path.exists(output)
-                        and os.path.getsize(output) > 0
+                        os.path.abspath(
+                            final_file
+                        )
+                        != os.path.abspath(
+                            output
+                        )
                     ):
 
-                        self.dl_stats["direct_downloads"] += 1
+                        try:
 
-                        return output, True
+                            if os.path.exists(
+                                output
+                            ):
 
-                    raise RuntimeError(
-                        "yt-dlp completed but "
-                        "no media file was created"
+                                os.remove(
+                                    output
+                                )
+
+                            os.replace(
+                                final_file,
+                                output,
+                            )
+
+                        except OSError:
+
+                            output = final_file
+
+                    # -------------------------------------
+                    # Validate
+                    # -------------------------------------
+
+                    if (
+                        not os.path.exists(
+                            output
+                        )
+                        or
+                        os.path.getsize(
+                            output
+                        ) <= 0
+                    ):
+
+                        raise RuntimeError(
+                            "Downloaded file is "
+                            "empty or missing"
+                        )
+
+                    if attempt["cookies"]:
+
+                        self.dl_stats[
+                            "cookie_downloads"
+                        ] += 1
+
+                    else:
+
+                        self.dl_stats[
+                            "direct_downloads"
+                        ] += 1
+
+                    logger.info(
+                        "YouTube download "
+                        "successful: "
+                        f"{output}"
+                    )
+
+                    return (
+                        output,
+                        True,
                     )
 
                 except Exception as e:
 
                     last_error = e
 
-                    self.dl_stats["fallback_attempts"] += 1
+                    self.dl_stats[
+                        "fallback_attempts"
+                    ] += 1
+
+                    logger.warning(
+                        "YouTube download failed: "
+                        f"{attempt['name']} "
+                        f"{selected_format}: {e}"
+                    )
 
                     self._remove_download_files(
                         safe_id
@@ -973,35 +1501,49 @@ class YouTubeAPI:
 
                     continue
 
-        self.dl_stats["failed_requests"] += 1
+        self.dl_stats[
+            "failed_requests"
+        ] += 1
 
         raise RuntimeError(
-            f"YouTube download failed: {last_error}"
+            "YouTube download failed: "
+            f"{last_error}"
         )
 
-    # =========================================================
-    # DOWNLOAD HELPERS
-    # =========================================================
+    # =====================================================
+    # REMOVE DOWNLOAD FILES
+    # =====================================================
 
     @staticmethod
     def _remove_download_files(
         safe_id: str,
     ):
 
+        pattern = os.path.join(
+            "downloads",
+            f"{safe_id}.*",
+        )
+
         for candidate in glob.glob(
-            os.path.join(
-                "downloads",
-                f"{safe_id}.*",
-            )
+            pattern
         ):
 
             try:
 
-                if os.path.isfile(candidate):
-                    os.remove(candidate)
+                if os.path.isfile(
+                    candidate
+                ):
+
+                    os.remove(
+                        candidate
+                    )
 
             except OSError:
                 pass
+
+    # =====================================================
+    # DOWNLOAD SYNC
+    # =====================================================
 
     @staticmethod
     def _download_sync(
@@ -1009,5 +1551,10 @@ class YouTubeAPI:
         opts,
     ):
 
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            ydl.download([url])
+        with yt_dlp.YoutubeDL(
+            opts
+        ) as ydl:
+
+            ydl.download(
+                [url]
+            )
