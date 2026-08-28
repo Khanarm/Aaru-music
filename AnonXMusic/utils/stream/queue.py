@@ -19,10 +19,12 @@ async def put_queue(
     forceplay: Union[bool, str] = None,
 ):
     title = title.title()
+
     try:
         duration_in_seconds = time_to_seconds(duration) - 3
-    except:
+    except Exception:
         duration_in_seconds = 0
+
     put = {
         "title": title,
         "dur": duration,
@@ -35,22 +37,29 @@ async def put_queue(
         "seconds": duration_in_seconds,
         "played": 0,
     }
+
     if forceplay:
         check = db.get(chat_id)
+
         if check:
             check.insert(0, put)
         else:
-            db[chat_id] = []
-            db[chat_id].append(put)
+            db[chat_id] = [put]
     else:
+        if chat_id not in db:
+            db[chat_id] = []
+
         db[chat_id].append(put)
+
+    # Add downloaded/local files to autoclean list.
+    # Do not add Telegram/video/live/index streams.
     if (
         file
-    and not str(file).startswith("vid_")
-    and not str(file).startswith("live_")
-    and not str(file).startswith("index_")
-):
-    autoclean.append(file)
+        and not str(file).startswith("vid_")
+        and not str(file).startswith("live_")
+        and not str(file).startswith("index_")
+    ):
+        autoclean.append(file)
 
 
 async def put_queue_index(
@@ -67,14 +76,17 @@ async def put_queue_index(
     if "20.212.146.162" in vidid:
         try:
             dur = await asyncio.get_event_loop().run_in_executor(
-                None, check_duration, vidid
+                None,
+                check_duration,
+                vidid,
             )
             duration = seconds_to_min(dur)
-        except:
+        except Exception:
             duration = "ᴜʀʟ sᴛʀᴇᴀᴍ"
             dur = 0
     else:
         dur = 0
+
     put = {
         "title": title,
         "dur": duration,
@@ -86,12 +98,16 @@ async def put_queue_index(
         "seconds": dur,
         "played": 0,
     }
+
     if forceplay:
         check = db.get(chat_id)
+
         if check:
             check.insert(0, put)
         else:
-            db[chat_id] = []
-            db[chat_id].append(put)
+            db[chat_id] = [put]
     else:
+        if chat_id not in db:
+            db[chat_id] = []
+
         db[chat_id].append(put)
