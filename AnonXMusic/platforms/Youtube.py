@@ -46,9 +46,7 @@ def cookie_txt_file():
         if not txt_files:
             return None
 
-        selected = random.choice(txt_files)
-
-        return selected
+        return random.choice(txt_files)
 
     except Exception:
         return None
@@ -56,7 +54,7 @@ def cookie_txt_file():
 
 def cookie_files():
     """
-    Return all cookie files.
+    Return all valid cookie files.
     """
 
     try:
@@ -89,8 +87,6 @@ def cookie_files():
 def valid_cookie_file(path):
     """
     Basic cookie file validation.
-    Does not validate whether the cookies are still
-    accepted by YouTube.
     """
 
     try:
@@ -149,7 +145,7 @@ class YouTubeAPI:
         }
 
     # =====================================================
-    # URL CLEAN
+    # CLEAN URL
     # =====================================================
 
     @staticmethod
@@ -160,15 +156,19 @@ class YouTubeAPI:
 
         link = str(link).strip()
 
-        # Remove common tracking parameters.
-        if "&si=" in link:
-            link = link.split("&si=", 1)[0]
+        try:
 
-        if "?si=" in link:
-            link = link.split("?si=", 1)[0]
+            if "&si=" in link:
+                link = link.split("&si=", 1)[0]
 
-        if "&feature=" in link:
-            link = link.split("&feature=", 1)[0]
+            if "?si=" in link:
+                link = link.split("?si=", 1)[0]
+
+            if "&feature=" in link:
+                link = link.split("&feature=", 1)[0]
+
+        except Exception:
+            pass
 
         return link
 
@@ -210,13 +210,13 @@ class YouTubeAPI:
 
             "retries": 3,
 
-            "fragment_retries": 3,
+            "fragment_retries": 5,
 
             "file_access_retries": 3,
 
             "extractor_retries": 3,
 
-            "socket_timeout": 20,
+            "socket_timeout": 30,
 
             "source_address": "0.0.0.0",
 
@@ -258,9 +258,13 @@ class YouTubeAPI:
         if player_client:
 
             opts["extractor_args"] = {
+
                 "youtube": {
+
                     "player_client": player_client,
+
                 }
+
             }
 
         opts.update(extra)
@@ -276,7 +280,7 @@ class YouTubeAPI:
         attempts = []
 
         # -------------------------------------------------
-        # NO COOKIE CLIENTS
+        # WITHOUT COOKIE
         # -------------------------------------------------
 
         attempts.extend(
@@ -286,16 +290,19 @@ class YouTubeAPI:
                     "client": None,
                     "cookies": None,
                 },
+
                 {
                     "name": "android",
                     "client": ["android"],
                     "cookies": None,
                 },
+
                 {
                     "name": "ios",
                     "client": ["ios"],
                     "cookies": None,
                 },
+
                 {
                     "name": "web",
                     "client": ["web"],
@@ -305,7 +312,7 @@ class YouTubeAPI:
         )
 
         # -------------------------------------------------
-        # COOKIE CLIENTS
+        # COOKIE ATTEMPTS
         # -------------------------------------------------
 
         cookies = cookie_files()
@@ -314,7 +321,6 @@ class YouTubeAPI:
 
             random.shuffle(cookies)
 
-            # Maximum 5 cookies per request cycle.
             for index, cookie in enumerate(
                 cookies[:5]
             ):
@@ -385,6 +391,7 @@ class YouTubeAPI:
         messages = [message_1]
 
         if message_1.reply_to_message:
+
             messages.append(
                 message_1.reply_to_message
             )
@@ -392,7 +399,7 @@ class YouTubeAPI:
         for message in messages:
 
             # -------------------------------------------------
-            # NORMAL URL
+            # MESSAGE URL
             # -------------------------------------------------
 
             if message.entities:
@@ -486,6 +493,7 @@ class YouTubeAPI:
         )
 
         if not data:
+
             raise ValueError(
                 "No YouTube result found"
             )
@@ -517,15 +525,21 @@ class YouTubeAPI:
 
         vidid = result.get("id")
 
-        duration_sec = (
-            0
-            if not duration_min
-            else int(
-                time_to_seconds(
-                    duration_min
+        duration_sec = 0
+
+        if duration_min:
+
+            try:
+
+                duration_sec = int(
+                    time_to_seconds(
+                        duration_min
+                    )
                 )
-            )
-        )
+
+            except Exception:
+
+                duration_sec = 0
 
         return (
             title,
@@ -563,6 +577,7 @@ class YouTubeAPI:
         )
 
         if not data:
+
             raise ValueError(
                 "No YouTube result found"
             )
@@ -600,6 +615,7 @@ class YouTubeAPI:
         )
 
         if not data:
+
             raise ValueError(
                 "No YouTube result found"
             )
@@ -636,6 +652,7 @@ class YouTubeAPI:
         )
 
         if not data:
+
             raise ValueError(
                 "No YouTube result found"
             )
@@ -648,6 +665,7 @@ class YouTubeAPI:
         )
 
         if not thumbnails:
+
             return ""
 
         return thumbnails[0].get(
@@ -666,13 +684,13 @@ class YouTubeAPI:
         audio: bool = False,
     ):
         """
-        Resolve a fresh YouTube direct media URL.
+        Resolve a fresh YouTube direct URL.
 
         audio=True:
-            Return audio-only URL.
+            Audio-only stream.
 
         audio=False:
-            Return video URL with audio if available.
+            Video + audio stream.
         """
 
         link = self._video_url(
@@ -683,7 +701,7 @@ class YouTubeAPI:
         attempts = self._build_attempts()
 
         # -------------------------------------------------
-        # AUDIO FORMATS
+        # AUDIO
         # -------------------------------------------------
 
         if audio:
@@ -693,8 +711,7 @@ class YouTubeAPI:
                 (
                     "bestaudio[ext=m4a]/"
                     "bestaudio[ext=webm]/"
-                    "bestaudio/"
-                    "best"
+                    "bestaudio/best"
                 ),
 
                 "bestaudio/best",
@@ -703,7 +720,7 @@ class YouTubeAPI:
             ]
 
         # -------------------------------------------------
-        # VIDEO FORMATS
+        # VIDEO
         # -------------------------------------------------
 
         else:
@@ -711,18 +728,14 @@ class YouTubeAPI:
             formats = [
 
                 (
-                    "bestvideo[height<=720]"
-                    "+bestaudio/"
-                    "best[height<=720]/"
-                    "best"
+                    "best[height<=720]"
+                    "[vcodec!=none]"
+                    "[acodec!=none]"
                 ),
 
                 (
-                    "bestvideo[height<=720]"
-                    "+bestaudio/best"
+                    "best[height<=720]/best"
                 ),
-
-                "best[height<=720]",
 
                 "best",
             ]
@@ -730,7 +743,7 @@ class YouTubeAPI:
         last_error = None
 
         # -------------------------------------------------
-        # ATTEMPT LOOP
+        # ATTEMPTS
         # -------------------------------------------------
 
         for attempt in attempts:
@@ -740,9 +753,9 @@ class YouTubeAPI:
                 try:
 
                     logger.info(
-                        "YouTube DIRECT STREAM attempt: "
-                        f"{attempt['name']} "
-                        f"format={selected_format} "
+                        "YouTube DIRECT STREAM: "
+                        f"{attempt['name']} | "
+                        f"{selected_format} | "
                         f"audio={audio}"
                     )
 
@@ -762,6 +775,8 @@ class YouTubeAPI:
 
                         noplaylist=True,
 
+                        check_formats=False,
+
                     )
 
                     direct_url = (
@@ -769,55 +784,58 @@ class YouTubeAPI:
                             self._extract_direct,
                             link,
                             opts,
-                            audio,
                         )
                     )
 
-                    if direct_url:
+                    if not direct_url:
 
-                        if attempt[
-                            "cookies"
-                        ]:
-
-                            self.dl_stats[
-                                "cookie_downloads"
-                            ] += 1
-
-                        else:
-
-                            self.dl_stats[
-                                "direct_downloads"
-                            ] += 1
-
-                        logger.info(
-                            "YouTube direct stream "
-                            "URL resolved successfully."
+                        raise RuntimeError(
+                            "No direct media URL "
+                            "returned by yt-dlp"
                         )
 
-                        return (
-                            1,
-                            direct_url,
-                        )
+                    if attempt["cookies"]:
+
+                        self.dl_stats[
+                            "cookie_downloads"
+                        ] += 1
+
+                    else:
+
+                        self.dl_stats[
+                            "direct_downloads"
+                        ] += 1
+
+                    logger.info(
+                        "YouTube direct URL "
+                        "resolved successfully."
+                    )
+
+                    return (
+                        1,
+                        direct_url,
+                    )
 
                 except Exception as e:
 
                     last_error = e
 
-                    logger.warning(
-                        "Direct YouTube stream failed: "
-                        f"{attempt['name']} "
-                        f"{selected_format}: {e}"
-                    )
-
                     self.dl_stats[
                         "fallback_attempts"
                     ] += 1
 
+                    logger.warning(
+                        "YouTube direct stream "
+                        f"failed: {attempt['name']} "
+                        f"| {selected_format} "
+                        f"| {e}"
+                    )
+
                     continue
 
         logger.error(
-            "Unable to resolve YouTube direct "
-            f"stream URL: {last_error}"
+            "Unable to resolve YouTube "
+            f"direct stream: {last_error}"
         )
 
         return (
@@ -837,8 +855,19 @@ class YouTubeAPI:
     def _extract_direct(
         link,
         opts,
-        audio=False,
     ):
+        """
+        IMPORTANT:
+
+        Do not manually select a random item from
+        info['formats'].
+
+        yt-dlp has already selected the requested
+        format. We use info['url'] directly.
+
+        This prevents audio/video mismatch and is
+        especially important for long YouTube songs.
+        """
 
         with yt_dlp.YoutubeDL(
             opts
@@ -854,169 +883,9 @@ class YouTubeAPI:
                 return None
 
             # -------------------------------------------------
-            # AUDIO
+            # NORMAL RESOLVED URL
             # -------------------------------------------------
 
-            if audio:
-
-                formats = (
-                    info.get(
-                        "formats"
-                    )
-                    or []
-                )
-
-                audio_formats = []
-
-                for fmt in formats:
-
-                    url = fmt.get(
-                        "url"
-                    )
-
-                    if not url:
-                        continue
-
-                    # Must have audio.
-                    acodec = fmt.get(
-                        "acodec"
-                    )
-
-                    if (
-                        not acodec
-                        or acodec == "none"
-                    ):
-                        continue
-
-                    audio_formats.append(
-                        fmt
-                    )
-
-                # Highest quality audio first.
-                audio_formats.sort(
-                    key=lambda x: (
-                        x.get(
-                            "abr"
-                        )
-                        or 0,
-                        x.get(
-                            "tbr"
-                        )
-                        or 0,
-                    ),
-                    reverse=True,
-                )
-
-                if audio_formats:
-
-                    return audio_formats[
-                        0
-                    ].get("url")
-
-                # Fallback.
-                direct_url = info.get(
-                    "url"
-                )
-
-                if direct_url:
-
-                    return direct_url
-
-                return None
-
-            # -------------------------------------------------
-            # VIDEO
-            # -------------------------------------------------
-
-            formats = (
-                info.get(
-                    "formats"
-                )
-                or []
-            )
-
-            video_formats = []
-
-            for fmt in formats:
-
-                url = fmt.get(
-                    "url"
-                )
-
-                if not url:
-                    continue
-
-                vcodec = fmt.get(
-                    "vcodec"
-                )
-
-                if (
-                    not vcodec
-                    or vcodec == "none"
-                ):
-                    continue
-
-                video_formats.append(
-                    fmt
-                )
-
-            # Prefer formats containing
-            # both video and audio.
-            combined = [
-                fmt
-                for fmt in video_formats
-                if (
-                    fmt.get(
-                        "acodec"
-                    )
-                    and fmt.get(
-                        "acodec"
-                    ) != "none"
-                )
-            ]
-
-            if combined:
-
-                combined.sort(
-                    key=lambda x: (
-                        x.get(
-                            "height"
-                        )
-                        or 0,
-                        x.get(
-                            "tbr"
-                        )
-                        or 0,
-                    ),
-                    reverse=True,
-                )
-
-                return combined[
-                    0
-                ].get("url")
-
-            # Video-only fallback.
-            if video_formats:
-
-                video_formats.sort(
-                    key=lambda x: (
-                        x.get(
-                            "height"
-                        )
-                        or 0,
-                        x.get(
-                            "tbr"
-                        )
-                        or 0,
-                    ),
-                    reverse=True,
-                )
-
-                return video_formats[
-                    0
-                ].get("url")
-
-            # Final fallback.
             direct_url = info.get(
                 "url"
             )
@@ -1024,6 +893,68 @@ class YouTubeAPI:
             if direct_url:
 
                 return direct_url
+
+            # -------------------------------------------------
+            # REQUESTED FORMATS
+            # -------------------------------------------------
+
+            requested = (
+                info.get(
+                    "requested_formats"
+                )
+                or []
+            )
+
+            if requested:
+
+                # Prefer a format that contains audio.
+                for fmt in requested:
+
+                    fmt_url = fmt.get(
+                        "url"
+                    )
+
+                    acodec = fmt.get(
+                        "acodec"
+                    )
+
+                    if (
+                        fmt_url
+                        and acodec
+                        and acodec != "none"
+                    ):
+
+                        return fmt_url
+
+                # Any valid requested URL.
+                for fmt in requested:
+
+                    fmt_url = fmt.get(
+                        "url"
+                    )
+
+                    if fmt_url:
+
+                        return fmt_url
+
+            # -------------------------------------------------
+            # LAST FALLBACK
+            # -------------------------------------------------
+
+            for fmt in (
+                info.get(
+                    "formats"
+                )
+                or []
+            ):
+
+                fmt_url = fmt.get(
+                    "url"
+                )
+
+                if fmt_url:
+
+                    return fmt_url
 
             return None
 
@@ -1065,15 +996,15 @@ class YouTubeAPI:
                     "duration"
                 )
 
-                duration_sec = (
-                    int(
+                duration_sec = 0
+
+                if duration:
+
+                    duration_sec = int(
                         time_to_seconds(
                             duration
                         )
                     )
-                    if duration
-                    else 0
-                )
 
                 thumbnails = (
                     video.get(
@@ -1113,6 +1044,7 @@ class YouTubeAPI:
                 )
 
             except Exception:
+
                 continue
 
         return videos
@@ -1214,7 +1146,9 @@ class YouTubeAPI:
 
         def extract():
 
-            attempts = self._build_attempts()
+            attempts = (
+                self._build_attempts()
+            )
 
             last_error = None
 
@@ -1223,12 +1157,15 @@ class YouTubeAPI:
                 try:
 
                     opts = self._ydl_opts(
+
                         cookies=attempt[
                             "cookies"
                         ],
+
                         player_client=attempt[
                             "client"
                         ],
+
                     )
 
                     with yt_dlp.YoutubeDL(
@@ -1240,11 +1177,17 @@ class YouTubeAPI:
                             download=False,
                         )
 
+                        if not info:
+
+                            continue
+
                         available = []
 
-                        for fmt in info.get(
-                            "formats",
-                            [],
+                        for fmt in (
+                            info.get(
+                                "formats",
+                                [],
+                            )
                         ):
 
                             if (
@@ -1252,10 +1195,11 @@ class YouTubeAPI:
                                 in str(
                                     fmt.get(
                                         "format",
-                                        ""
+                                        "",
                                     )
                                 ).lower()
                             ):
+
                                 continue
 
                             available.append(
@@ -1301,7 +1245,7 @@ class YouTubeAPI:
                     continue
 
             raise RuntimeError(
-                f"Unable to fetch formats: "
+                "Unable to fetch formats: "
                 f"{last_error}"
             )
 
@@ -1363,11 +1307,9 @@ class YouTubeAPI:
                     if len(parts) == 3:
 
                         duration_secs = (
-                            int(parts[0])
-                            * 3600
+                            int(parts[0]) * 3600
                             +
-                            int(parts[1])
-                            * 60
+                            int(parts[1]) * 60
                             +
                             int(parts[2])
                         )
@@ -1375,8 +1317,7 @@ class YouTubeAPI:
                     elif len(parts) == 2:
 
                         duration_secs = (
-                            int(parts[0])
-                            * 60
+                            int(parts[0]) * 60
                             +
                             int(parts[1])
                         )
@@ -1536,7 +1477,7 @@ class YouTubeAPI:
         attempts = self._build_attempts()
 
         # -------------------------------------------------
-        # VIDEO FORMAT
+        # VIDEO
         # -------------------------------------------------
 
         if is_video:
@@ -1563,7 +1504,7 @@ class YouTubeAPI:
             ]
 
         # -------------------------------------------------
-        # AUDIO FORMAT
+        # AUDIO
         # -------------------------------------------------
 
         else:
@@ -1576,8 +1517,7 @@ class YouTubeAPI:
                     else
                     (
                         "bestaudio[ext=m4a]/"
-                        "bestaudio/"
-                        "best"
+                        "bestaudio/best"
                     )
                 ),
 
@@ -1589,7 +1529,7 @@ class YouTubeAPI:
         last_error = None
 
         # -------------------------------------------------
-        # DOWNLOAD LOOP
+        # DOWNLOAD ATTEMPTS
         # -------------------------------------------------
 
         for attempt in attempts:
@@ -1614,19 +1554,22 @@ class YouTubeAPI:
 
                         noplaylist=True,
 
-                        retries=3,
+                        retries=5,
 
-                        fragment_retries=3,
+                        fragment_retries=5,
+
+                        file_access_retries=3,
 
                         merge_output_format=(
                             "mp4"
                             if is_video
                             else None
                         ),
+
                     )
 
                     # -------------------------------------------------
-                    # AUDIO POST PROCESSING
+                    # AUDIO TO MP3
                     # -------------------------------------------------
 
                     if not is_video:
@@ -1645,6 +1588,7 @@ class YouTubeAPI:
                                 "preferredquality":
                                 "192",
                             }
+
                         ]
 
                     await asyncio.to_thread(
@@ -1654,6 +1598,7 @@ class YouTubeAPI:
                         url,
 
                         ydl_opts,
+
                     )
 
                     # -------------------------------------------------
@@ -1668,12 +1613,10 @@ class YouTubeAPI:
                         not is_video
                     ):
 
-                        candidates = (
-                            glob.glob(
-                                os.path.join(
-                                    "downloads",
-                                    f"{safe_id}.*",
-                                )
+                        candidates = glob.glob(
+                            os.path.join(
+                                "downloads",
+                                f"{safe_id}.*",
                             )
                         )
 
@@ -1685,6 +1628,7 @@ class YouTubeAPI:
                             if p.lower().endswith(
                                 ".mp3"
                             )
+
                         ]
 
                         if mp3_candidates:
